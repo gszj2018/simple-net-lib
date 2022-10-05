@@ -58,7 +58,7 @@ void EventQueue::close() {
 
 void EventQueue::closeAndDiscard() {
     close();
-    while (size_ > 0) get();
+    while (nullptr != get()) {}
 }
 
 EventQueue::~EventQueue() {
