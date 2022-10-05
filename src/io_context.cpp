@@ -158,12 +158,12 @@ std::shared_ptr<TcpListener> ContextImpl::createTcpServer(int port, int &ec, int
 
 CtxObject::CtxObject(ContextImpl *ctx) :
         ctx_(ctx) {
-    assert(!ctx_->closed_);
-    ++(ctx_->objectCnt_);
+    assert(!ctx_->closed_.load(std::memory_order::acquire));
+    ctx_->objectCnt_.fetch_add(1, std::memory_order::acq_rel);
 }
 
 CtxObject::~CtxObject() {
-    --(ctx_->objectCnt_);
+    ctx_->objectCnt_.fetch_sub(1, std::memory_order::acq_rel);
 }
 
 EventObject::~EventObject() = default;
@@ -239,6 +239,7 @@ EventPoller::~EventPoller() {
     stop();
     thr_.join();
     close(epfd_);
+    close(evfd_);
 }
 
 void EventPoller::routine_() {
