@@ -52,7 +52,7 @@ int main() {
     });
 
 
-    Logger::global->log(LOG_INFO, "HelloWorld server started on port 12322, use command 'pending_' to stop.");
+    Logger::global->log(LOG_INFO, "HelloWorld server started on port 12322, use command 'p' to stop.");
     int c;
     for (;;) {
         c = getchar();

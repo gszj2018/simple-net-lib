@@ -117,7 +117,7 @@ int main() {
     });
 
 
-    Logger::global->log(LOG_INFO, "echo server started on port 12321, use command 'pending_' to stop.");
+    Logger::global->log(LOG_INFO, "echo server started on port 12321, use command 'p' to stop.");
     int c;
     for (;;) {
         c = getchar();
