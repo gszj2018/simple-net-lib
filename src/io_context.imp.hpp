@@ -11,9 +11,11 @@
 #include <atomic>
 #include <shared_mutex>
 #include <sys/epoll.h>
+#include <unordered_map>
+#include <list>
+
 
 namespace SNL1 {
-
 
 using Event = std::function<void()>;
 
@@ -68,7 +70,11 @@ class EventPoller final {
 public:
     explicit EventPoller(EventQueue *q, int pollSize);
 
-    void registerEvent(EventRegOp op, int fd, EventType type, std::shared_ptr<EventObject> ptr);
+    void registerEvent(EventRegOp op, int fd, EventType type);
+
+    void registerObject(int fd, std::shared_ptr<EventObject> obj);
+
+    void deregisterObject(int fd);
 
     void stop();
 
@@ -100,7 +106,7 @@ public:
 
     ContextImpl(int threadCnt_, int queueCapacity_, int pollSize_);
 
-    std::shared_ptr<TcpListener> createTcpServer(int port, int &ec, int backlog);
+    std::shared_ptr<Listener> newTcpServer(int port, int backlog, int &ec);
 
     void stop();
 

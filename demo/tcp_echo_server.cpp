@@ -18,28 +18,22 @@ class EchoSession : public std::enable_shared_from_this<EchoSession> {
 public:
     static constexpr int BUF_SIZE = 104857600;
 
-    explicit EchoSession(std::shared_ptr<TcpEndpoint> net_) :
+    explicit EchoSession(std::shared_ptr<Connection> net_) :
             net_(std::move(net_)), buf_(std::make_unique<char[]>(BUF_SIZE)) {
     }
 
     void start() {
         net_->enableHandler([ptr = shared_from_this()](EventType e) {
             ptr->handler_(e);
-        });
-    }
-
-    void stop() {
-        net_->stop();
+        }, true, false);
     }
 
     ~EchoSession() {
-        stop();
         Logger::global->log(LOG_INFO, "session destroyed");
     }
 
-
 private:
-    std::shared_ptr<TcpEndpoint> net_;
+    std::shared_ptr<Connection> net_;
     std::queue<Message> pending_;
     std::unique_ptr<char[]> buf_;
 
@@ -47,12 +41,12 @@ private:
         int ec;
         if (e & EVENT_IN) {
             for (;;) {
-                size_t n = net_->doRecv(buf_.get(), BUF_SIZE, ec);
+                size_t n = net_->hRead(buf_.get(), BUF_SIZE, ec);
                 if (n > 0) {
                     std::unique_ptr<char[]> b = std::make_unique<char[]>(n);
                     memcpy(b.get(), buf_.get(), n);
                     pending_.emplace(std::move(b), 0, n);
-                    net_->setWritePolling(true);
+                    net_->hSetWrite(true);
                 } else {
                     if (ec) {
                         Logger::global->log(LOG_WARN, strerror(ec));
@@ -64,7 +58,7 @@ private:
         if (e & EVENT_OUT) {
             while (!pending_.empty()) {
                 Message *m = &pending_.front();
-                size_t n = net_->doSend(m->buf.get() + m->offset, m->size - m->offset, ec);
+                size_t n = net_->hWrite(m->buf.get() + m->offset, m->size - m->offset, ec);
                 if (n > 0) {
                     m->offset += n;
                     if (m->offset == m->size)pending_.pop();
@@ -75,14 +69,14 @@ private:
                     break;
                 }
             }
-            if (pending_.empty()) net_->setWritePolling(false);
+            if (pending_.empty()) net_->hSetWrite(false);
         }
 
-        if (net_->isReadClosed()) {
+        if (net_->hIsReadClosed()) {
             if (pending_.empty()) {
                 Logger::global->log(LOG_INFO, "disconnect client");
-                net_->setBothClosed();
-            } else if (net_->isWriteClosed()) {
+                net_->hShutdown(true, true);
+            } else if (net_->hIsWriteClosed()) {
                 Logger::global->log(LOG_INFO, "client disconnected prematurely");
                 pending_ = std::queue<Message>();
             }
@@ -96,7 +90,7 @@ int main() {
     Context::ignorePipeSignal();
 
     Context ctx(4, 1024, 128);
-    std::shared_ptr<TcpListener> listener = ctx.createTcpServer(port, ec, 128);
+    std::shared_ptr<Listener> listener = ctx.newTcpServer(port, 128, ec);
     if (!listener) {
         panic(strerror(ec));
     }
@@ -104,8 +98,8 @@ int main() {
     listener->enableHandler([listener](EventType e) {
         if (e & EVENT_IN) {
             int ec;
-            std::shared_ptr<TcpEndpoint> session;
-            while ((session = listener->doAccept(ec))) {
+            std::shared_ptr<Connection> session;
+            while ((session = listener->hAccept(ec))) {
                 Logger::global->log(LOG_INFO, "incoming connection");
                 std::shared_ptr<EchoSession> s = std::make_shared<EchoSession>(session);
                 s->start();

@@ -11,82 +11,92 @@ namespace SNL1 {
 
 class ContextImpl;
 
-class TcpEndpoint final : private CtxObject,
-                          public EventObject,
-                          public std::enable_shared_from_this<TcpEndpoint> {
+using DataHandler = std::function<void(EventType)>;
+using AcceptHandler = std::function<void(EventType)>;
+
+class Connection final : private CtxObject,
+                         public EventObject,
+                         public std::enable_shared_from_this<Connection> {
 
 public:
-    void enableHandler(std::function<void(EventType)> h);
+    size_t hRead(void *buf, size_t len, int &ec);
 
-    void enableWritePolling();
+    size_t hWrite(const void *buf, size_t len, int &ec);
 
-    void setWritePolling(bool w);
+    bool hIsReadClosed() const;
 
-    bool isReadClosed() const;
+    bool hIsWriteClosed() const;
 
-    bool isWriteClosed() const;
+    void hSetRead(bool enable);
 
-    void setReadClosed();
+    void hSetWrite(bool enable);
 
-    void setWriteClosed();
+    void hShutdown(bool rd, bool wr);
 
-    void setBothClosed();
+    void enableHandler(DataHandler handler, bool rd, bool wr);
 
-    size_t doSend(const void *buf, size_t len, int &ec);
+    void enableRead(bool enable);
 
-    size_t doRecv(void *buf, size_t len, int &ec);
+    void enableWrite(bool enable);
 
     void stop();
 
-    ~TcpEndpoint() override;
+    ~Connection() override;
 
-    friend class TcpListener;
-
-    friend class ContextImpl;
+    friend class Listener;
 
 private:
     int fd_;
-    bool sIn_, sOut_, aOut_;
-    std::function<void(EventType)> handler_;
+    bool sIn_, eIn_, sOut_, eOut_;
+    DataHandler handler_;
     std::recursive_mutex mutex_;
 
-    TcpEndpoint(ContextImpl *ctx, int fd);
+    Connection(ContextImpl *ctx, int fd);
 
     void handleEvent_(EventType type) override;
 
-    void doRearmEvent_();
+    void rearm_();
 
-    void doClose_();
+    void close_();
 
     void terminate_() override;
 
 };
 
-class TcpListener final : private CtxObject,
-                          public EventObject,
-                          public std::enable_shared_from_this<TcpListener> {
-public:
-    void enableHandler(std::function<void(EventType)> h);
 
-    std::shared_ptr<TcpEndpoint> doAccept(int &ec);
+class Listener final : private CtxObject,
+                       public EventObject,
+                       public std::enable_shared_from_this<Listener> {
+public:
+    std::shared_ptr<Connection> hAccept(int &ec);
+
+    void hSetAccept(bool enable);
+
+    void hShutdown();
+
+    void enableHandler(AcceptHandler handler);
+
+    void enableAccept(bool enable);
 
     void stop();
 
-    ~TcpListener() override;
+    ~Listener() override;
 
     friend class ContextImpl;
 
 private:
     int fd_;
-    bool sAcc_;
-    std::function<void(EventType)> handler_;
+    bool sAcc_, eAcc_;
+    AcceptHandler handler_;
     std::recursive_mutex mutex_;
 
-    TcpListener(ContextImpl *ctx, int fd);
+    Listener(ContextImpl *ctx, int fd);
 
     void handleEvent_(EventType type) override;
 
-    void doClose_();
+    void rearm_();
+
+    void close_();
 
     void terminate_() override;
 

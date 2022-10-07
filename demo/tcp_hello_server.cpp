@@ -13,7 +13,7 @@ int main() {
     Context::ignorePipeSignal();
 
     Context ctx(4, 1024, 1024);
-    std::shared_ptr<TcpListener> listener = ctx.createTcpServer(port, ec, 128);
+    std::shared_ptr<Listener> listener = ctx.newTcpServer(port, 128, ec);
     if (!listener) {
         panic(strerror(ec));
     }
@@ -21,29 +21,27 @@ int main() {
     listener->enableHandler([listener](EventType e) {
         if (e & EVENT_IN) {
             int ec;
-            std::shared_ptr<TcpEndpoint> session;
-            while ((session = listener->doAccept(ec))) {
+            std::shared_ptr<Connection> session;
+            while ((session = listener->hAccept(ec))) {
                 Logger::global->log(SNL1::LOG_INFO, "incoming connection");
                 session->enableHandler([session, offset = size_t(0)](EventType e)mutable {
                     int ec;
                     if (e & EVENT_OUT) {
-                        size_t n = session->doSend(GREET_STR + offset, GREET_LEN - offset, ec);
+                        size_t n = session->hWrite(GREET_STR + offset, GREET_LEN - offset, ec);
                         if (n > 0) {
                             offset += n;
                         } else {
                             if (ec) {
                                 Logger::global->log(SNL1::LOG_WARN, strerror(ec));
-                                session->setBothClosed();
+                                session->hShutdown(true, true);
                             }
                         }
                         if (offset == GREET_LEN) {
                             Logger::global->log(SNL1::LOG_INFO, "served one user");
-                            session->setWritePolling(false);
-                            session->setBothClosed();
+                            session->hShutdown(true, true);
                         }
                     }
-                });
-                session->enableWritePolling();
+                }, false, true);
             }
             if (ec) {
                 Logger::global->log(LOG_WARN, strerror(ec));

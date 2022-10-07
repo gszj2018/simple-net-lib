@@ -115,7 +115,7 @@ ContextImpl::~ContextImpl() {
     }
 }
 
-std::shared_ptr<TcpListener> ContextImpl::createTcpServer(int port, int &ec, int backlog) {
+std::shared_ptr<Listener> ContextImpl::newTcpServer(int port, int backlog, int &ec) {
     ec = 0;
     sockaddr_in6 addr{};
     memset(&addr, 0, sizeof(sockaddr_in6));
@@ -152,7 +152,7 @@ std::shared_ptr<TcpListener> ContextImpl::createTcpServer(int port, int &ec, int
         return nullptr;
     }
 
-    return std::shared_ptr<TcpListener>(new TcpListener(this, fd));
+    return std::shared_ptr<Listener>(new Listener(this, fd));
 }
 
 
@@ -173,7 +173,7 @@ EventPoller::EventPoller(EventQueue *q, int pollSize) :
         closed_(false),
         size_(pollSize),
         events_(std::make_unique<epoll_event[]>(pollSize)) {
-    if ((epfd_ = epoll_create1(0)) < 0) {
+    if ((epfd_ = epoll_create1(EPOLL_CLOEXEC)) < 0) {
         panic(strerror(errno));
     }
 
@@ -195,18 +195,8 @@ EventPoller::EventPoller(EventQueue *q, int pollSize) :
 }
 
 
-void EventPoller::registerEvent(EventRegOp op, int fd, EventType type, std::shared_ptr<EventObject> ptr) {
-    if (op != EventRegOp::REARM) {
-        std::lock_guard<std::recursive_mutex> lock(mapMutex_);
-        if (closed_.load(std::memory_order::acquire)) return;
-        if (op == EventRegOp::REGISTER) {
-            fdMap_[fd] = std::move(ptr);
-        } else if (op == EventRegOp::DEREGISTER) {
-            fdMap_.erase(fd);
-        }
-    } else {
-        if (closed_.load(std::memory_order::acquire)) return;
-    }
+void EventPoller::registerEvent(EventRegOp op, int fd, EventType type) {
+    if (closed_.load(std::memory_order::acquire)) return;
     constexpr int EPOLL_OP_MAP[] = {EPOLL_CTL_ADD, EPOLL_CTL_MOD, EPOLL_CTL_DEL};
     int epOp = EPOLL_OP_MAP[static_cast<int>(op)];
     epoll_event ev{};
@@ -218,6 +208,18 @@ void EventPoller::registerEvent(EventRegOp op, int fd, EventType type, std::shar
     if (epoll_ctl(epfd_, epOp, fd, &ev) < 0) {
         Logger::global->log(LOG_WARN, strerror(errno));
     }
+}
+
+void EventPoller::registerObject(int fd, std::shared_ptr<EventObject> obj) {
+    std::lock_guard<std::recursive_mutex> lock(mapMutex_);
+    if (closed_.load(std::memory_order::acquire)) return;
+    fdMap_[fd] = std::move(obj);
+}
+
+void EventPoller::deregisterObject(int fd) {
+    std::lock_guard<std::recursive_mutex> lock(mapMutex_);
+    if (closed_.load(std::memory_order::acquire)) return;
+    fdMap_.erase(fd);
 }
 
 void EventPoller::stop() {
@@ -275,8 +277,8 @@ Context::Context(int threadCnt, int queueCapacity, int pollSize) :
 
 }
 
-std::shared_ptr<TcpListener> Context::createTcpServer(int port, int &ec, int backlog) {
-    return impl->createTcpServer(port, ec, backlog);
+std::shared_ptr<Listener> Context::newTcpServer(int port, int backlog, int &ec) {
+    return impl->newTcpServer(port, backlog, ec);
 }
 
 void Context::stop() {

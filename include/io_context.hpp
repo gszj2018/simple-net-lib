@@ -8,13 +8,11 @@ namespace SNL1 {
 
 using EventType = unsigned int;
 constexpr unsigned EVENT_IN = 1;
-constexpr unsigned EVENT_OUT = 2;
+constexpr unsigned EVENT_OUT = 4;
 
 class ContextImpl;
 
-class TcpListener;
-
-class TcpEndpoint;
+class Listener;
 
 class CtxObject : private DisableCopy {
 public:
@@ -45,7 +43,7 @@ class Context final {
 public:
     Context(int threadCnt, int queueCapacity, int pollSize);
 
-    std::shared_ptr<TcpListener> createTcpServer(int port, int &ec, int backlog);
+    std::shared_ptr<Listener> newTcpServer(int port, int backlog, int &ec);
 
     void stop();
 
