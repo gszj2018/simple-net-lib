@@ -135,7 +135,6 @@ ContextImpl::~ContextImpl() {
 std::shared_ptr<Listener> ContextImpl::newTcpServer(int port, int backlog, int &ec) {
     ec = 0;
     sockaddr_in6 addr{};
-    memset(&addr, 0, sizeof(sockaddr_in6));
     addr.sin6_family = AF_INET6;
     addr.sin6_addr = IN6ADDR_ANY_INIT;
     addr.sin6_port = htons((uint16_t) port);
@@ -198,15 +197,7 @@ EventPoller::EventPoller(EventQueue *q, int pollSize) :
         panic(strerror(errno));
     }
 
-    {
-        epoll_event ev{};
-        std::memset(&ev, 0, sizeof(epoll_event));
-        ev.data.fd = evfd_;
-        ev.events = EPOLLONESHOT | EPOLLIN;
-        if (epoll_ctl(epfd_, EPOLL_CTL_ADD, evfd_, &ev) < 0) {
-            panic(strerror(errno));
-        }
-    }
+    epoll_(evfd_, EPOLL_CTL_ADD, EPOLLONESHOT | EPOLLIN);
 
     thr_ = std::thread(&EventPoller::routine_, this);
 }
@@ -298,7 +289,7 @@ void EventPoller::routine_() {
 }
 
 void EventPoller::epoll_(int fd, int op, uint32_t e) const {
-    epoll_event ev = {};
+    epoll_event ev{};
     ev.data.fd = fd;
     ev.events = e;
     if (epoll_ctl(epfd_, op, fd, &ev) < 0) {
@@ -322,7 +313,6 @@ void Context::stop() {
 
 void Context::ignorePipeSignal() {
     struct sigaction act{};
-    memset(&act, 0, sizeof(act));
     act.sa_flags = SA_RESTART;
     act.sa_handler = SIG_IGN;
     sigemptyset(&act.sa_mask);
