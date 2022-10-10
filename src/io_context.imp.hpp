@@ -94,7 +94,7 @@ private:
 
     void routine_();
 
-    void epoll_(int fd, int op, uint32_t e);
+    void epoll_(int fd, int op, uint32_t e) const;
 
 };
 

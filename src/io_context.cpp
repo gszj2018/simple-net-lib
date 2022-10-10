@@ -297,7 +297,7 @@ void EventPoller::routine_() {
     }
 }
 
-void EventPoller::epoll_(int fd, int op, uint32_t e) {
+void EventPoller::epoll_(int fd, int op, uint32_t e) const {
     epoll_event ev = {};
     ev.data.fd = fd;
     ev.events = e;
