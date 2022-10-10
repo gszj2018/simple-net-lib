@@ -23,6 +23,8 @@ public:
 
     size_t hWrite(const void *buf, size_t len, int &ec);
 
+    int hNativeHandle() const;
+
     bool hIsReadClosed() const;
 
     bool hIsWriteClosed() const;

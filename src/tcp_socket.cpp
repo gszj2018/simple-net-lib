@@ -168,6 +168,8 @@ size_t Connection::hWrite(const void *buf, size_t len, int &ec) {
     return n;
 }
 
+int Connection::hNativeHandle() const { return fd_; }
+
 bool Connection::hIsReadClosed() const { return !sIn_; }
 
 bool Connection::hIsWriteClosed() const { return !sOut_; }
