@@ -32,7 +32,7 @@ void EventQueue::put(Event e) {
     std::construct_at(q_ + tail_, std::move(e));
     tail_ = (tail_ + 1 == capacity_) ? 0 : (tail_ + 1);
     ++size_;
-    cg_.notify_all();
+    cg_.notify_one();
 }
 
 Event EventQueue::get() {
@@ -45,7 +45,7 @@ Event EventQueue::get() {
     std::destroy_at(q_ + head_);
     head_ = (head_ + 1 == capacity_) ? 0 : (head_ + 1);
     --size_;
-    cp_.notify_all();
+    cp_.notify_one();
     return e;
 }
 
@@ -62,8 +62,10 @@ void EventQueue::closeAndDiscard() {
 }
 
 EventQueue::~EventQueue() {
-    closeAndDiscard();
     std::unique_lock<std::mutex> lock(mutex_);
+    if (!closed_ || size_ > 0) {
+        panic("EventQueue is not cleanly closed");
+    }
     allocator_.deallocate(q_, (size_t) capacity_);
 }
 
@@ -77,12 +79,18 @@ MultiThreadPoolExecutor::MultiThreadPoolExecutor(int threadCnt, EventQueue *q) :
     }
 }
 
-void MultiThreadPoolExecutor::close() {
-    closed_.store(true, std::memory_order_release);
+void MultiThreadPoolExecutor::stop() {
+    // mark as closed
+    if (closed_.exchange(true, std::memory_order::acq_rel)) return;
+
+    // wait for executor threads exiting
+    for (auto &&t: pool_) t.join();
 }
 
 MultiThreadPoolExecutor::~MultiThreadPoolExecutor() {
-    close();
+    if (!closed_.load(std::memory_order::acquire)) {
+        panic("MultiThreadPoolExecutor is not cleanly closed");
+    }
 }
 
 void MultiThreadPoolExecutor::routine_() {
@@ -100,18 +108,27 @@ ContextImpl::ContextImpl(int threadCnt_, int queueCapacity_, int pollSize_) :
 }
 
 void ContextImpl::stop() {
-    closed_.store(true, std::memory_order::release);
-    poller_.stop();
-    executor_.close();
+    // mark as closed
+    if (closed_.exchange(true, std::memory_order::acq_rel)) return;
+
+    // we need to close event queue first
+    // otherwise threads may block on get() or put()
     eventQueue_.closeAndDiscard();
+
+    // stop event poller
+    poller_.stop();
+
+    // stop executor
+    executor_.stop();
 }
 
 ContextImpl::~ContextImpl() {
-    using namespace std::chrono_literals;
     stop();
-    while (objectCnt_.load(std::memory_order::acquire) > 0) {
-        Logger::global->log(LOG_WARN, "sessions are still alive, cannot stop context");
-        std::this_thread::sleep_for(30s);
+    for (;;) {
+        int c = objectCnt_.load(std::memory_order::acquire);
+        if (c == 0)break;
+        Logger::global->log(LOG_WARN, std::to_string(c) + " sessions alive, cannot stop context");
+        objectCnt_.wait(c, std::memory_order::acquire);
     }
 }
 
@@ -223,23 +240,28 @@ void EventPoller::deregisterObject(int fd) {
 }
 
 void EventPoller::stop() {
-    closed_.store(true, std::memory_order::release);
-    {
-        std::lock_guard<std::recursive_mutex> lock(mapMutex_);
-        for (auto &x: fdMap_) {
-            x.second->terminate_();
-        }
-        fdMap_.clear();
+    // mark as closed
+    if (closed_.exchange(true, std::memory_order::acq_rel)) return;
+
+    // use event fd to forcibly awake epoll
+    uint64_t v = 1;
+    write(evfd_, &v, sizeof(uint64_t));
+
+    // wait for poller thread exit
+    thr_.join();
+
+    // disengage all event receivers
+    std::lock_guard<std::recursive_mutex> lock(mapMutex_);
+    for (auto &x: fdMap_) {
+        x.second->terminate_();
     }
-    {
-        uint64_t v = 1;
-        write(evfd_, &v, sizeof(uint64_t));
-    }
+    fdMap_.clear();
 }
 
 EventPoller::~EventPoller() {
-    stop();
-    thr_.join();
+    if (!closed_.load(std::memory_order::acquire)) {
+        panic("EventPoller is not cleanly closed");
+    }
     close(epfd_);
     close(evfd_);
 }

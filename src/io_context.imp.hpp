@@ -50,14 +50,14 @@ public:
 
     MultiThreadPoolExecutor(int threadCnt, EventQueue *q);
 
-    void close();
+    void stop();
 
     ~MultiThreadPoolExecutor();
 
 private:
     EventQueue *q_;
     std::atomic_bool closed_;
-    std::vector<std::jthread> pool_;
+    std::vector<std::thread> pool_;
 
     void routine_();
 };
