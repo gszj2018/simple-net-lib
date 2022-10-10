@@ -240,7 +240,9 @@ void EventPoller::stop() {
 
     // use event fd to forcibly awake epoll
     uint64_t v = 1;
-    write(evfd_, &v, sizeof(uint64_t));
+    if (write(evfd_, &v, sizeof(uint64_t)) < 0) {
+        Logger::global->log(LOG_ERROR, strerror(errno));
+    }
 
     // wait for poller thread exit
     thr_.join();
