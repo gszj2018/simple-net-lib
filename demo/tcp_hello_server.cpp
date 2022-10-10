@@ -11,6 +11,7 @@ const size_t GREET_LEN = strlen(GREET_STR);
 int main() {
     int port = 12322, ec;
     Context::ignorePipeSignal();
+    Context::blockIntSignal();
 
     Context ctx(4, 1024, 1024);
     std::shared_ptr<Listener> listener = ctx.newTcpServer(port, 128, ec);
@@ -50,15 +51,10 @@ int main() {
     });
 
 
-    Logger::global->log(LOG_INFO, "HelloWorld server started on port 12322, use command 'p' to stop.");
-    int c;
-    for (;;) {
-        c = getchar();
-        if (c == EOF || c == 'q') {
-            listener.reset();
-            ctx.stop();
-            return 0;
-        }
-    }
-
+    Logger::global->log(LOG_INFO, "HelloWorld server started on port 12322, CTRL-C to stop");
+    Context::waitUntilInterrupt();
+    Logger::global->log(LOG_INFO, "server interrupted, exiting...");
+    listener.reset();
+    ctx.stop();
+    return 0;
 }

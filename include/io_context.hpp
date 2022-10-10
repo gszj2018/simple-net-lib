@@ -45,11 +45,16 @@ public:
 
     std::shared_ptr<Listener> newTcpServer(int port, int backlog, int &ec);
 
+
     void stop();
 
     ~Context();
 
     static void ignorePipeSignal();
+
+    static void blockIntSignal();
+
+    static void waitUntilInterrupt();
 
 private:
     std::unique_ptr<ContextImpl> impl;

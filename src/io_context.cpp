@@ -321,6 +321,27 @@ void Context::ignorePipeSignal() {
     }
 }
 
+void Context::blockIntSignal() {
+    sigset_t s{};
+    sigemptyset(&s);
+    sigaddset(&s, SIGINT);
+    int ec;
+    if (0 != (ec = pthread_sigmask(SIG_BLOCK, &s, nullptr))) {
+        panic(strerror(ec));
+    }
+}
+
+void Context::waitUntilInterrupt() {
+    sigset_t s{};
+    sigemptyset(&s);
+    sigaddset(&s, SIGINT);
+    int sig = 0;
+    do {
+        sigwait(&s, &sig);
+    } while (sig != SIGINT);
+}
+
+
 Context::~Context() = default;
 
 }
