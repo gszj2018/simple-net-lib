@@ -9,7 +9,6 @@ Listener::Listener(ContextImpl *ctx, int fd) :
         CtxObject(ctx),
         fd_(fd), sAcc_(true), eAcc_(false),
         handler_(nullptr) {
-    ctx_->poller_.registerEvent(EventRegOp::REGISTER, fd_, 0);
 }
 
 void Listener::handleEvent_(EventType type) {
@@ -22,13 +21,10 @@ void Listener::handleEvent_(EventType type) {
 }
 
 void Listener::rearm_() {
-    if (sAcc_ && eAcc_) {
-        ctx_->poller_.registerEvent(EventRegOp::REARM, fd_, EVENT_IN);
-    }
+    ctx_->poller_.rearmEvent(fd_, sAcc_ && eAcc_, false);
 }
 
 void Listener::close_() {
-    ctx_->poller_.registerEvent(EventRegOp::DEREGISTER, fd_, 0);
     ctx_->poller_.deregisterObject(fd_);
     close(fd_);
     fd_ = -1;
@@ -50,7 +46,7 @@ void Listener::enableHandler(SNL1::AcceptHandler handler) {
     if (fd_ < 0)return;
     handler_ = std::move(handler);
     eAcc_ = true;
-    ctx_->poller_.registerObject(fd_, shared_from_this());
+    ctx_->poller_.registerObject(fd_, shared_from_this(), true, false);
     rearm_();
 }
 
@@ -83,8 +79,7 @@ Connection::Connection(ContextImpl *ctx, int fd) :
         CtxObject(ctx),
         fd_(fd),
         sIn_(true), eIn_(false), sOut_(true), eOut_(false),
-        handler_([](EventType) {}) {
-    ctx_->poller_.registerEvent(EventRegOp::REGISTER, fd_, 0);
+        handler_{} {
 }
 
 void Connection::handleEvent_(EventType type) {
@@ -98,15 +93,10 @@ void Connection::handleEvent_(EventType type) {
 }
 
 void Connection::rearm_() {
-    EventType e = 0;
-    e |= (sIn_ && eIn_) ? EVENT_IN : 0;
-    e |= (sOut_ && eOut_) ? EVENT_OUT : 0;
-
-    if (e)ctx_->poller_.registerEvent(EventRegOp::REARM, fd_, e);
+    ctx_->poller_.rearmEvent(fd_, sIn_ && eIn_, sOut_ && eOut_);
 }
 
 void Connection::close_() {
-    ctx_->poller_.registerEvent(EventRegOp::DEREGISTER, fd_, 0);
     ctx_->poller_.deregisterObject(fd_);
     close(fd_);
     fd_ = -1;
@@ -128,7 +118,7 @@ void Connection::enableHandler(SNL1::DataHandler handler, bool rd, bool wr) {
     if (fd_ < 0)return;
     handler_ = std::move(handler);
     eIn_ = rd, eOut_ = wr;
-    ctx_->poller_.registerObject(fd_, shared_from_this());
+    ctx_->poller_.registerObject(fd_, shared_from_this(), rd, wr);
     rearm_();
 }
 

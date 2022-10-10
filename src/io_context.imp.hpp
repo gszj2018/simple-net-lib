@@ -70,9 +70,9 @@ class EventPoller final {
 public:
     explicit EventPoller(EventQueue *q, int pollSize);
 
-    void registerEvent(EventRegOp op, int fd, EventType type);
+    void rearmEvent(int fd, bool in, bool out);
 
-    void registerObject(int fd, std::shared_ptr<EventObject> obj);
+    void registerObject(int fd, std::shared_ptr<EventObject> obj, bool in, bool out);
 
     void deregisterObject(int fd);
 
@@ -93,6 +93,8 @@ private:
     std::thread thr_;
 
     void routine_();
+
+    void epoll_(int fd, int op, uint32_t e);
 
 };
 

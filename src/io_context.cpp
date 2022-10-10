@@ -211,32 +211,36 @@ EventPoller::EventPoller(EventQueue *q, int pollSize) :
     thr_ = std::thread(&EventPoller::routine_, this);
 }
 
-
-void EventPoller::registerEvent(EventRegOp op, int fd, EventType type) {
-    if (closed_.load(std::memory_order::acquire)) return;
-    constexpr int EPOLL_OP_MAP[] = {EPOLL_CTL_ADD, EPOLL_CTL_MOD, EPOLL_CTL_DEL};
-    int epOp = EPOLL_OP_MAP[static_cast<int>(op)];
-    epoll_event ev{};
-    std::memset(&ev, 0, sizeof(epoll_event));
-    ev.data.fd = fd;
-    ev.events = EPOLLONESHOT;
-    ev.events |= (type & EVENT_IN) ? EPOLLIN : 0;
-    ev.events |= (type & EVENT_OUT) ? EPOLLOUT : 0;
-    if (epoll_ctl(epfd_, epOp, fd, &ev) < 0) {
-        Logger::global->log(LOG_WARN, strerror(errno));
+void EventPoller::rearmEvent(int fd, bool in, bool out) {
+    if (in || out) {
+        uint32_t e = EPOLLONESHOT;
+        if (in) e |= EPOLLIN;
+        if (out)e |= EPOLLOUT;
+        epoll_(fd, EPOLL_CTL_MOD, e);
     }
 }
 
-void EventPoller::registerObject(int fd, std::shared_ptr<EventObject> obj) {
+void EventPoller::registerObject(int fd, std::shared_ptr<EventObject> obj, bool in, bool out) {
     std::lock_guard<std::recursive_mutex> lock(mapMutex_);
     if (closed_.load(std::memory_order::acquire)) return;
-    fdMap_[fd] = std::move(obj);
+
+    if (fdMap_.emplace(fd, std::move(obj)).second) {
+        uint32_t e = EPOLLONESHOT;
+        if (in) e |= EPOLLIN;
+        if (out)e |= EPOLLOUT;
+        epoll_(fd, EPOLL_CTL_ADD, e);
+    }
 }
 
 void EventPoller::deregisterObject(int fd) {
     std::lock_guard<std::recursive_mutex> lock(mapMutex_);
     if (closed_.load(std::memory_order::acquire)) return;
-    fdMap_.erase(fd);
+
+    auto it = fdMap_.find(fd);
+    if (it != fdMap_.end()) {
+        fdMap_.erase(it);
+        epoll_(fd, EPOLL_CTL_DEL, EPOLLONESHOT);
+    }
 }
 
 void EventPoller::stop() {
@@ -290,6 +294,15 @@ void EventPoller::routine_() {
                 });
             }
         }
+    }
+}
+
+void EventPoller::epoll_(int fd, int op, uint32_t e) {
+    epoll_event ev = {};
+    ev.data.fd = fd;
+    ev.events = e;
+    if (epoll_ctl(epfd_, op, fd, &ev) < 0) {
+        Logger::global->log(LOG_WARN, strerror(errno));
     }
 }
 
