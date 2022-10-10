@@ -19,6 +19,7 @@ namespace SNL1 {
 
 using Event = std::function<void()>;
 
+
 class EventQueue final : private DisableCopy {
 
 public:
@@ -45,6 +46,7 @@ private:
     bool closed_;
 };
 
+
 class MultiThreadPoolExecutor final : private DisableCopy {
 public:
 
@@ -62,9 +64,6 @@ private:
     void routine_();
 };
 
-enum class EventRegOp {
-    REGISTER, REARM, DEREGISTER
-};
 
 class EventPoller final {
 public:
@@ -97,6 +96,7 @@ private:
     void epoll_(int fd, int op, uint32_t e) const;
 
 };
+
 
 class ContextImpl final : private DisableCopy {
 public:
