@@ -8,6 +8,7 @@
 #include <cstring>
 #include <thread>
 #include <chrono>
+#include <queue>
 #include "io_context.imp.hpp"
 #include "io_context.hpp"
 #include "common.hpp"
@@ -255,11 +256,17 @@ void EventPoller::stop() {
     thr_.join();
 
     // disengage all event receivers
-    std::lock_guard<std::recursive_mutex> lock(mapMutex_);
-    for (auto &x: fdMap_) {
-        x.second->terminate_();
-    }
+    std::queue<std::shared_ptr<EventObject>> closing;
+    std::unique_lock<std::recursive_mutex> lock(mapMutex_);
+    for (auto &x: fdMap_) closing.push(x.second);
     fdMap_.clear();
+    lock.unlock(); // mutex is no more needed
+
+    // terminate all connections
+    while (!closing.empty()) {
+        closing.front()->terminate_();
+        closing.pop();
+    }
 }
 
 EventPoller::~EventPoller() {
