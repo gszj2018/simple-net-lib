@@ -19,9 +19,8 @@ namespace SNL1 {
 
 EventQueue::EventQueue(int cap) :
         capacity_(cap), head_(0), tail_(0), size_(0), q_{},
-        closed_(false) {
+        closed_(false), finish_(false) {
     assert(cap > 0);
-    std::unique_lock<std::mutex> lock(mutex_);
     q_ = allocator_.allocate(capacity_);
 }
 
@@ -50,20 +49,27 @@ Event EventQueue::get() {
 }
 
 void EventQueue::close() {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     closed_ = true;
     cp_.notify_all();
     cg_.notify_all();
 }
 
 void EventQueue::closeAndDiscard() {
+    // stop accepting new event
     close();
+
+    // clear event queue
     while (nullptr != get()) {}
+
+    // mark as finished
+    std::lock_guard<std::mutex> lock(mutex_);
+    finish_ = true;
 }
 
 EventQueue::~EventQueue() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (!closed_ || size_ > 0) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!finish_) {
         panic("EventQueue is not cleanly closed");
     }
     allocator_.deallocate(q_, (size_t) capacity_);

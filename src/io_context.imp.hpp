@@ -43,7 +43,7 @@ private:
     std::condition_variable cp_, cg_;
     Event *q_;
     std::allocator<Event> allocator_;
-    bool closed_;
+    bool closed_, finish_;
 };
 
 
