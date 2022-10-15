@@ -135,7 +135,7 @@ ContextImpl::~ContextImpl() {
         int c = objectCnt_.load(std::memory_order::acquire);
         if (c == 0)break;
         Logger::global->log(LOG_WARN, std::to_string(c) + " sessions alive, cannot stop context");
-        objectCnt_.wait(c, std::memory_order::acquire);
+        std::this_thread::sleep_for(std::chrono::seconds(10));
     }
 }
 

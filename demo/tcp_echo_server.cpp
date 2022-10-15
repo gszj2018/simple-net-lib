@@ -44,7 +44,7 @@ private:
                 if (n > 0) {
                     std::unique_ptr<char[]> b = std::make_unique<char[]>(n);
                     memcpy(b.get(), buf_.get(), n);
-                    pending_.emplace(std::move(b), 0, n);
+                    pending_.push(Message{std::move(b), 0, n});
                     net_->hSetWrite(true);
                 } else {
                     if (ec) {
