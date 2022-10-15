@@ -87,7 +87,8 @@ private:
     std::recursive_mutex mapMutex_;
 
     int size_;
-    std::unique_ptr<epoll_event[]> events_;
+    std::vector<struct epoll_event> events_;
+    std::vector<Event> pending_;
 
     std::thread thr_;
 

@@ -193,8 +193,9 @@ EventObject::~EventObject() = default;
 EventPoller::EventPoller(EventQueue *q, int pollSize) :
         q_(q),
         closed_(false),
-        size_(pollSize),
-        events_(std::make_unique<epoll_event[]>(pollSize)) {
+        size_(pollSize), events_(pollSize), pending_(0) {
+    pending_.reserve(pollSize);
+
     if ((epfd_ = epoll_create1(EPOLL_CLOEXEC)) < 0) {
         panic(strerror(errno));
     }
@@ -271,12 +272,16 @@ EventPoller::~EventPoller() {
 
 void EventPoller::routine_() {
     for (;;) {
-        int n = epoll_wait(epfd_, events_.get(), size_, -1);
+        int n = epoll_wait(epfd_, events_.data(), size_, -1);
         if (closed_.load(std::memory_order::acquire))break;
         if (n < 0) {
-            Logger::global->log(LOG_WARN, strerror(errno));
+            if (errno != EINTR) {
+                Logger::global->log(LOG_WARN, strerror(errno));
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
         } else {
-            std::lock_guard<std::recursive_mutex> lock(mapMutex_);
+            // collect events
+            std::unique_lock<std::recursive_mutex> lock(mapMutex_);
             for (int i = 0; i < n; ++i) {
                 int fd = events_[i].data.fd;
                 if (fd == evfd_) {
@@ -285,13 +290,22 @@ void EventPoller::routine_() {
                 }
                 auto it = fdMap_.find(fd);
                 if (it == fdMap_.end())continue;
-                EventType type = 0;
-                type |= (events_[i].events & EPOLLIN) ? EVENT_IN : 0;
-                type |= (events_[i].events & EPOLLOUT) ? EVENT_OUT : 0;
-                q_->put([ptr = it->second, type]() {
-                    ptr->handleEvent_(type);
-                });
+                EventType e = 0;
+                if (events_[i].events & EPOLLIN) e |= EVENT_IN;
+                if (events_[i].events & EPOLLOUT)e |= EVENT_OUT;
+                if (e) {
+                    pending_.emplace_back([ptr = it->second, e]() {
+                        ptr->handleEvent_(e);
+                    });
+                }
             }
+
+            // call event handlers
+            // since no need to access fd map, now unlock mutex
+            lock.unlock();
+            for (auto &&ev: pending_)
+                q_->put(std::move(ev));
+            pending_.clear();
         }
     }
 }
